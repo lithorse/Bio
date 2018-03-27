@@ -208,6 +208,7 @@ namespace Bio.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Book(int id, [Bind("ID,SeatsLeft,Time,MovieID,AuditoriumID")] Viewing viewing)
         {
+            int tickets = 0;
             if (id != viewing.ID)
             {
                 return NotFound();
@@ -215,27 +216,35 @@ namespace Bio.Controllers
 
             if (ModelState.IsValid)
             {
+                int NewSeats = (from s in _context.Viewings where s.ID == id select s.SeatsLeft).First() - viewing.SeatsLeft;
                 if (viewing.SeatsLeft > 0 && viewing.SeatsLeft <= 12)
                 {
-                    try
+                    if (NewSeats >= 0)
                     {
-                        int NewSeats = (from s in _context.Viewings where s.ID == id select s.SeatsLeft).First() - viewing.SeatsLeft;
-                        viewing.SeatsLeft = NewSeats;
-                        _context.Update(viewing);
-                        await _context.SaveChangesAsync();
+                        try
+                        {
+                            tickets = viewing.SeatsLeft;
+                            viewing.SeatsLeft = NewSeats;
+                            _context.Update(viewing);
+                            await _context.SaveChangesAsync();
+                        }
+                        catch (DbUpdateConcurrencyException)
+                        {
+                            if (!ViewingExists(viewing.ID))
+                            {
+                                return NotFound();
+                            }
+                            else
+                            {
+                                throw;
+                            }
+                        }
+                        return RedirectToAction(nameof(Confirmation), new { id, tickets, saveChangesError = true });
                     }
-                    catch (DbUpdateConcurrencyException)
+                    else
                     {
-                        if (!ViewingExists(viewing.ID))
-                        {
-                            return NotFound();
-                        }
-                        else
-                        {
-                            throw;
-                        }
+                        ModelState.AddModelError("", "Not enough seats left.");
                     }
-                    return RedirectToAction(nameof(Confirmation), new { id, viewing.SeatsLeft, saveChangesError = true });
                 }
                 else
                 {
@@ -247,7 +256,7 @@ namespace Bio.Controllers
             return View(viewing);
         }
 
-        public async Task<IActionResult> Confirmation(int? id, int seatsLeft)
+        public async Task<IActionResult> Confirmation(int? id, int tickets)
         {
             if (id == null)
             {
@@ -262,7 +271,7 @@ namespace Bio.Controllers
             {
                 return NotFound();
             }
-            viewing.SeatsLeft = seatsLeft;
+            ViewBag.tickets = tickets;
             return View(viewing);
         }
     }
